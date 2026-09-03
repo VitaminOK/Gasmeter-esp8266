@@ -9,13 +9,17 @@
 https://youtu.be/yp7ZDe6VlVM
 
 Example Code i used to create a smart gasmeter for a typical german Gas Meter
-check out 00-gasmeter.yaml
+check out 00-gasmeter.yaml (analog hall sensor version), gasmeter_v2.yaml
+(analog + digital pulse counter combined) or gasmeter_v1_simple.yaml
+(digital pulse counter only)
 
 # Install
 - create a new board / instance in ESPhome in your Homeassistant
-- add the code from 00-gasmeter.yaml
-- change the api and secret keys of the yaml file 
-- check the analog input voltages and adjust them in the yaml file
+- add the code from 00-gasmeter.yaml (or one of the other variants)
+- copy secrets.yaml.example to secrets.yaml and fill in your wifi credentials,
+  OTA password and API encryption key (never commit secrets.yaml)
+- check the analog input voltages / thresholds and pulse ratio in the
+  `substitutions:` block at the top of the yaml file and adjust them for your setup
 
 - it can take quite some testing until you figured out the right values for the upper and lower limit
 

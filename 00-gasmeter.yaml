@@ -1,5 +1,16 @@
+substitutions:
+  device_name: 00-gasmeter
+  # this sensor is counting the pulses, if your gas meter says 1 imp = 0,01m3 then 0.01 below is right
+  # you need to change it if the pulse to m3 ratio is different on your gas meter
+  pulse_ratio: "0.01"
+  # factor to convert m³ pulses into kWh; adjust to your local conversion factor
+  kwh_factor: "0.1"
+  # these values need to be adjusted based on your setup, this is the voltage the analog input is measuring
+  analog_threshold_upper: "0.531"
+  analog_threshold_lower: "0.53"
+
 esphome:
-  name: 00-gasmeter
+  name: ${device_name}
 
 esp8266:
   board: esp01_1m
@@ -10,10 +21,10 @@ logger:
 # Enable Home Assistant API
 api:
   encryption:
-    key: USEYOURWONKEY
+    key: !secret api_encryption_key
 
 ota:
-  password: USEYOURWONKEY
+  password: !secret ota_gasmester
 
 wifi:
   ssid: !secret wifi_ssid
@@ -23,19 +34,18 @@ globals:
 # this will count the pules, calculated by "analog threshold"sensor
   - id: total_pulses
     type: int
-    restore_value: false
+    restore_value: true
     initial_value: '0'
-  
+
 binary_sensor:
 
 
   - platform: analog_threshold
     name: "GasMeterAnalogTreshhold"
     sensor_id: gasmeteranaloginput
-    threshold: 
-# these values need to be adjusted based on your setup, this is the voltace the analog input is measuring
-      upper: 0.531
-      lower: 0.53
+    threshold:
+      upper: ${analog_threshold_upper}
+      lower: ${analog_threshold_lower}
     on_press:
       then:
         - lambda: id(total_pulses) += 1;
@@ -51,9 +61,9 @@ sensor:
     icon: "mdi:fire"
     accuracy_decimals: 2
     lambda: |-
-      return id(total_pulses) * 0.01;
+      return id(total_pulses) * ${pulse_ratio};
       ESP_LOGD("Gaszähler analog TAG", "Pulse bisher: %d", id(total_pulses));
-  
+
   # this sensor is using the same logic, just calculating in kWh
   - platform: template
     name: "Gasverbrauch-kWh"
@@ -63,7 +73,7 @@ sensor:
     icon: "mdi:fire"
     accuracy_decimals: 2
     lambda: |-
-      return id(total_pulses) * 0.1;
+      return id(total_pulses) * ${kwh_factor};
       ESP_LOGD("Gaszähler kWh TAG", "Pulse bisher: %d", id(total_pulses));
   
   #analog input connected to the analog sensor output from the hall sensor board

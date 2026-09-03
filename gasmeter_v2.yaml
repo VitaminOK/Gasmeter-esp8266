@@ -1,5 +1,15 @@
+substitutions:
+  device_name: 00-gasmeter
+  # vom Gaszaehler der Faktor pro Impuls; bei mir 1 imp = 0,01m³
+  pulse_ratio: "0.01"
+  # Entprellzeit für den Impulseingang (D1); einstellen zwischen 50ms und 1.5s
+  pulse_debounce: 50ms
+  # Spannungs-Schwellwerte für den analogen Hall-Sensor-Eingang (A0)
+  analog_threshold_upper: "0.531"
+  analog_threshold_lower: "0.53"
+
 esphome:
-  name: 00-gasmeter
+  name: ${device_name}
 
 esp8266:
   board: d1_mini
@@ -10,7 +20,7 @@ logger:
 # Enable Home Assistant API
 api:
   encryption:
-    key: "YOUR KEY"
+    key: !secret api_encryption_key
 
 ota:
   password: !secret ota_gasmester
@@ -25,30 +35,30 @@ globals:
   #counter für die impulse normal
   - id: total_pulses1
     type: int
-    restore_value: false
+    restore_value: true
     initial_value: '0'
 
   #counter für nur den impuls
   - id: total_pulses2
     type: int
-    restore_value: false
+    restore_value: true
     initial_value: '0'
 
 # vom Gaszaehler der Faktor pro Impuls; bei mir 1 imp = 0,01m³
   - id: imp_ratio
     type: float
     restore_value: false
-    initial_value: '0.01'  
-  
+    initial_value: '${pulse_ratio}'
+
 binary_sensor:
 
 # Sensor zählt, ob ein "klick" beim Gaszähler erfolgt ist. Auf Basis der Spannung
   - platform: analog_threshold
     name: "GasMeterAnalogTreshhold"
     sensor_id: gasmeteranaloginput
-    threshold: 
-      upper: 0.531
-      lower: 0.53
+    threshold:
+      upper: ${analog_threshold_upper}
+      lower: ${analog_threshold_lower}
     on_press:
       then:
         - lambda: id(total_pulses2) += 1;
@@ -62,9 +72,8 @@ binary_sensor:
       mode: INPUT_PULLUP
     name: "Live-Impuls"
     filters:
-     - delayed_on: 50ms
-      # jü wert 150ms
-    on_press:         
+      - delayed_on: ${pulse_debounce}
+    on_press:
       then:
         - lambda: id(total_pulses1) += 1;
 
