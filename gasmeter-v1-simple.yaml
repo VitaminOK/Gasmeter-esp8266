@@ -1,0 +1,171 @@
+substitutions:
+  # vom Gaszaehler der Faktor pro Impuls; bei mir 1 imp = 0,01m³
+  imp_ratio: "0.01"
+
+esphome:
+  name: 00-gasmeter
+
+esp8266:
+  board: d1_mini
+  # Zählerstand bleibt auch nach Stromausfall erhalten
+  restore_from_flash: true
+
+# höchstens alle 10 Minuten in den Flash schreiben (schont den Flash),
+# bei Stromausfall fehlen dadurch maximal 10 Minuten an Impulsen
+preferences:
+  flash_write_interval: 10min
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_key_gasmeter
+
+ota:
+  - platform: esphome
+    password: !secret ota_gasmeter
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+
+
+globals:
+  #counter für die impulse seit dem Setzen des Zählerstands
+  - id: total_pulses1
+    type: int
+    restore_value: true
+    initial_value: '0'
+
+  # Zählerstand in m³ zum Zeitpunkt des Setzens in Home Assistant
+  - id: meter_offset
+    type: float
+    restore_value: true
+    initial_value: '0.0'
+
+binary_sensor:
+
+# Sensor zählt, ob ein "klick" beim Gaszähler erfolgt ist. Auf Basis eines Eingang Impulses
+  - platform: gpio
+    id: internal_pulse_counter
+    pin:
+      number: D1
+      mode: INPUT_PULLUP
+      allow_other_uses: true
+    name: "Live-Impuls"
+    filters:
+     - delayed_on: 150ms
+# Wert einstellen zwischen 50ms und 1.5 s
+
+    on_press:
+      then:
+        - lambda: |-
+            id(total_pulses1) += 1;
+            ESP_LOGD("gasmeter", "Pulse bisher: %d", id(total_pulses1));
+        - component.update: gas_meter_reading
+        - component.update: gas_energy
+
+
+# schaut, ob der ESP8266 online ist
+  - platform: status
+    name: "gasmeter Status"
+
+
+number:
+
+# hier den Zählerstand vom Gaszähler eintragen (Home Assistant: Geräteseite -> "Zählerstand setzen")
+  - platform: template
+    name: "Zählerstand setzen"
+    id: set_meter_reading
+    icon: "mdi:counter"
+    unit_of_measurement: "m³"
+    mode: box
+    min_value: 0
+    max_value: 99999.999
+    step: 0.001
+    entity_category: config
+    update_interval: 60s
+    lambda: |-
+      return id(meter_offset) + id(total_pulses1) * ${imp_ratio};
+    set_action:
+      - lambda: |-
+          id(meter_offset) = x;
+          id(total_pulses1) = 0;
+          ESP_LOGI("gasmeter", "Zählerstand gesetzt: %.3f m³", x);
+      - component.update: gas_meter_reading
+      - component.update: gas_energy
+
+# Zustandszahl von der Gasrechnung
+  - platform: template
+    name: "Zustandszahl"
+    id: zustandszahl
+    icon: "mdi:numeric"
+    mode: box
+    min_value: 0.8
+    max_value: 1.0
+    step: 0.0001
+    initial_value: 0.95
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - component.update: gas_energy
+
+# Brennwert von der Gasrechnung in kWh/m³
+  - platform: template
+    name: "Brennwert"
+    id: brennwert
+    icon: "mdi:fire-circle"
+    unit_of_measurement: "kWh/m³"
+    mode: box
+    min_value: 8
+    max_value: 13
+    step: 0.001
+    initial_value: 11.2
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - component.update: gas_energy
+
+
+sensor:
+
+# Zählerstand in m³ (gleicher Wert wie auf dem Gaszähler)
+  - platform: template
+    name: "GasverbrauchPuls"
+    id: gas_meter_reading
+    device_class: gas
+    unit_of_measurement: "m³"
+    state_class: "total_increasing"
+    icon: "mdi:fire"
+    accuracy_decimals: 3
+    update_interval: 60s
+    lambda: |-
+      return id(meter_offset) + id(total_pulses1) * ${imp_ratio};
+
+
+# Energie in kWh = m³ * Zustandszahl * Brennwert
+  - platform: template
+    name: "Gasverbrauch-kWh"
+    id: gas_energy
+    device_class: energy
+    unit_of_measurement: "kWh"
+    state_class: "total_increasing"
+    icon: "mdi:fire"
+    accuracy_decimals: 2
+    update_interval: 60s
+    lambda: |-
+      float m3 = id(meter_offset) + id(total_pulses1) * ${imp_ratio};
+      return m3 * id(zustandszahl).state * id(brennwert).state;
+
+
+  - platform: pulse_counter
+    pin:
+      number: D1
+      allow_other_uses: true
+    name: "Pulse Counter"
+    icon: "mdi:pulse"

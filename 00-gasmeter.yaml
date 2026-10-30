@@ -1,8 +1,24 @@
+substitutions:
+  # if your gas meter says 1 imp = 0,01 m³ then 0.01 is right,
+  # change it if the pulse to m³ ratio is different on your gas meter
+  imp_ratio: "0.01"
+  # these values need to be adjusted based on your setup, this is the voltage the analog input is measuring
+  # a bigger gap between upper and lower avoids double counting
+  threshold_upper: "0.531"
+  threshold_lower: "0.53"
+
 esphome:
   name: 00-gasmeter
 
 esp8266:
   board: esp01_1m
+  # keep the counter and the meter reading after a power loss
+  restore_from_flash: true
+
+# write the counter to flash at most every 10 minutes (protects the flash),
+# after a power loss up to 10 minutes of pulses can be missing
+preferences:
+  flash_write_interval: 10min
 
 # Enable logging
 logger:
@@ -10,65 +26,131 @@ logger:
 # Enable Home Assistant API
 api:
   encryption:
-    key: USEYOURWONKEY
+    key: !secret api_key_gasmeter
 
 ota:
-  password: USEYOURWONKEY
+  - platform: esphome
+    password: !secret ota_gasmeter
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
 
 globals:
-# this will count the pules, calculated by "analog threshold"sensor
+  # pulses since the meter reading was set, calculated by the "analog threshold" sensor
   - id: total_pulses
     type: int
-    restore_value: false
+    restore_value: true
     initial_value: '0'
-  
+
+  # meter reading in m³ at the moment it was set in Home Assistant
+  - id: meter_offset
+    type: float
+    restore_value: true
+    initial_value: '0.0'
+
 binary_sensor:
-
-
   - platform: analog_threshold
     name: "GasMeterAnalogTreshhold"
     sensor_id: gasmeteranaloginput
-    threshold: 
-# these values need to be adjusted based on your setup, this is the voltace the analog input is measuring
-      upper: 0.531
-      lower: 0.53
+    threshold:
+      upper: ${threshold_upper}
+      lower: ${threshold_lower}
     on_press:
       then:
-        - lambda: id(total_pulses) += 1;
+        - lambda: |-
+            id(total_pulses) += 1;
+            ESP_LOGD("gasmeter", "Pulse bisher: %d", id(total_pulses));
+        - component.update: gas_meter_reading
+        - component.update: gas_energy
+
+number:
+  # enter the reading of your gas meter here (Home Assistant: device page -> "Zählerstand setzen")
+  - platform: template
+    name: "Zählerstand setzen"
+    id: set_meter_reading
+    icon: "mdi:counter"
+    unit_of_measurement: "m³"
+    mode: box
+    min_value: 0
+    max_value: 99999.999
+    step: 0.001
+    entity_category: config
+    update_interval: 60s
+    lambda: |-
+      return id(meter_offset) + id(total_pulses) * ${imp_ratio};
+    set_action:
+      - lambda: |-
+          id(meter_offset) = x;
+          id(total_pulses) = 0;
+          ESP_LOGI("gasmeter", "Zählerstand gesetzt: %.3f m³", x);
+      - component.update: gas_meter_reading
+      - component.update: gas_energy
+
+  # "Zustandszahl" from your gas bill
+  - platform: template
+    name: "Zustandszahl"
+    id: zustandszahl
+    icon: "mdi:numeric"
+    mode: box
+    min_value: 0.8
+    max_value: 1.0
+    step: 0.0001
+    initial_value: 0.95
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - component.update: gas_energy
+
+  # "Brennwert" from your gas bill in kWh/m³
+  - platform: template
+    name: "Brennwert"
+    id: brennwert
+    icon: "mdi:fire-circle"
+    unit_of_measurement: "kWh/m³"
+    mode: box
+    min_value: 8
+    max_value: 13
+    step: 0.001
+    initial_value: 11.2
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - component.update: gas_energy
 
 sensor:
- # this sensor is counting the pulses, if your gas meter says 1 imp = 0,01m3 then the 0.001 below is right
- #you need to change it if the pulse to m3 ratio is different on your gas meter
+  # meter reading in m³ (same value as on your gas meter)
   - platform: template
     name: "GasverbrauchAd"
+    id: gas_meter_reading
     device_class: gas
     unit_of_measurement: "m³"
     state_class: "total_increasing"
     icon: "mdi:fire"
-    accuracy_decimals: 2
+    accuracy_decimals: 3
+    update_interval: 60s
     lambda: |-
-      return id(total_pulses) * 0.01;
-      ESP_LOGD("Gaszähler analog TAG", "Pulse bisher: %d", id(total_pulses));
-  
-  # this sensor is using the same logic, just calculating in kWh
+      return id(meter_offset) + id(total_pulses) * ${imp_ratio};
+
+  # energy in kWh = m³ * Zustandszahl * Brennwert
   - platform: template
     name: "Gasverbrauch-kWh"
-    device_class: gas
+    id: gas_energy
+    device_class: energy
     unit_of_measurement: "kWh"
     state_class: "total_increasing"
     icon: "mdi:fire"
     accuracy_decimals: 2
+    update_interval: 60s
     lambda: |-
-      return id(total_pulses) * 0.1;
-      ESP_LOGD("Gaszähler kWh TAG", "Pulse bisher: %d", id(total_pulses));
-  
-  #analog input connected to the analog sensor output from the hall sensor board
+      float m3 = id(meter_offset) + id(total_pulses) * ${imp_ratio};
+      return m3 * id(zustandszahl).state * id(brennwert).state;
+
+  # analog input connected to the analog sensor output from the hall sensor board
   - platform: adc
-    internal: TRUE
+    internal: true
     pin: A0
     id: gasmeteranaloginput
     name: "GasMeterAnalogInput"
