@@ -1,0 +1,181 @@
+# Home Assistant Dashboard für den Gaszähler
+# Einstellungen -> Dashboards -> Dashboard hinzufügen -> "Neues Dashboard von Grund auf"
+# Dashboard öffnen -> Stift (Bearbeiten) -> drei Punkte -> "Raw-Konfigurationseditor" -> alles hier einfügen
+# Nur Standard-Karten, kein HACS nötig.
+# Die Entity-IDs gelten für 00-gasmeter.yaml. Bei gasmeter-v1-simple.yaml
+# sensor.gasverbrauchad durch sensor.gasverbrauchpuls ersetzen.
+
+title: Gaszähler
+views:
+  - title: Übersicht
+    path: gas
+    icon: mdi:fire
+    cards:
+
+      # aktueller Stand
+      - type: vertical-stack
+        cards:
+          - type: tile
+            entity: sensor.gasverbrauchad
+            name: Zählerstand
+            icon: mdi:counter
+          - type: horizontal-stack
+            cards:
+              - type: gauge
+                entity: sensor.gas_durchfluss
+                name: Durchfluss
+                min: 0
+                max: 3
+                needle: true
+                severity:
+                  green: 0
+                  yellow: 1.5
+                  red: 2.5
+              - type: gauge
+                entity: sensor.gas_leistung
+                name: Leistung
+                unit: kW
+                min: 0
+                max: 30
+                needle: true
+                severity:
+                  green: 0
+                  yellow: 15
+                  red: 25
+
+      # Verbrauch heute / Woche / Monat aus der Langzeitstatistik
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+          - type: statistic
+            entity: sensor.gasverbrauchad
+            name: Heute
+            stat_type: change
+            period:
+              calendar:
+                period: day
+          - type: statistic
+            entity: sensor.gasverbrauchad
+            name: Woche
+            stat_type: change
+            period:
+              calendar:
+                period: week
+          - type: statistic
+            entity: sensor.gasverbrauchad
+            name: Monat
+            stat_type: change
+            period:
+              calendar:
+                period: month
+          - type: statistic
+            entity: sensor.gasverbrauch_kwh
+            name: Heute
+            stat_type: change
+            period:
+              calendar:
+                period: day
+          - type: statistic
+            entity: sensor.gasverbrauch_kwh
+            name: Woche
+            stat_type: change
+            period:
+              calendar:
+                period: week
+          - type: statistic
+            entity: sensor.gasverbrauch_kwh
+            name: Monat
+            stat_type: change
+            period:
+              calendar:
+                period: month
+
+      # Kosten aus configuration.yaml (utility_meter)
+      - type: entities
+        title: Kosten
+        state_color: false
+        entities:
+          - entity: sensor.gasverbrauch_euro_daily
+            name: Heute
+          - entity: sensor.gasverbrauch_euro_weekly
+            name: Diese Woche
+          - entity: sensor.gasverbrauch_euro_monthly
+            name: Dieser Monat
+
+      # Tagesverbrauch der letzten 30 Tage
+      - type: statistics-graph
+        title: Verbrauch pro Tag
+        entities:
+          - entity: sensor.gasverbrauchad
+            name: Gas
+        stat_types:
+          - change
+        chart_type: bar
+        period: day
+        days_to_show: 30
+
+      # Monatsverbrauch des letzten Jahres
+      - type: statistics-graph
+        title: Verbrauch pro Monat
+        entities:
+          - entity: sensor.gasverbrauch_kwh
+            name: Gas
+        stat_types:
+          - change
+        chart_type: bar
+        period: month
+        days_to_show: 365
+
+      # Verlauf der letzten 24 Stunden
+      - type: history-graph
+        title: Leistung (24 h)
+        hours_to_show: 24
+        entities:
+          - entity: sensor.gas_leistung
+            name: Leistung
+
+  - title: Einstellungen
+    path: einstellungen
+    icon: mdi:cog
+    cards:
+
+      - type: markdown
+        content: >-
+          **Zählerstand** vom mechanischen Zählwerk ablesen und unten eintragen.
+          **Zustandszahl** und **Brennwert** stehen auf der Gasrechnung.
+
+      - type: entities
+        title: Zähler einstellen
+        entities:
+          - entity: number.zahlerstand_setzen
+            name: Zählerstand (m³)
+          - entity: number.zustandszahl
+          - entity: number.brennwert
+
+      - type: entities
+        title: Diagnose
+        state_color: true
+        entities:
+          - entity: binary_sensor.gasmeter_status
+            name: Online
+          - entity: sensor.gasmeter_wlan_signal
+            name: WLAN-Signal
+          - entity: sensor.gasmeter_uptime
+            name: Laufzeit
+          - entity: sensor.gasmeter_ip
+            name: IP-Adresse
+          - entity: sensor.gasmeter_esphome_version
+            name: ESPHome-Version
+          - entity: button.gasmeter_neustart
+            name: Neustart
+
+      # nur sichtbar, wenn beim ADC-Sensor internal: false gesetzt ist
+      - type: history-graph
+        title: Kalibrierung (Spannung A0)
+        hours_to_show: 2
+        entities:
+          - entity: sensor.gasmeteranaloginput
+            name: Spannung A0
+          - entity: binary_sensor.gasmeteranalogtreshhold
+            name: Impuls

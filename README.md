@@ -20,6 +20,7 @@ Ausführliches Video (Deutsch): https://youtu.be/yp7ZDe6VlVM
 | `gasmeter-v1-simple.yaml` | Digital: Schaltausgang des Sensors an D1 |
 | `gasmeter-v2.yaml` | Analog (A0) und digital (D1) parallel zum Vergleich, braucht einen linearen 49E-Hall-Sensor |
 | `configuration.yaml` | Auszug für Home Assistant: Kosten in €, Tages-/Wochen-/Monatszähler |
+| `dashboard.yaml` | Fertiges Home-Assistant-Dashboard |
 
 ## Verdrahtung
 
@@ -100,6 +101,14 @@ kWh = m³ × Zustandszahl × Brennwert
 | gasmeter IP, ESPHome Version | – | Diagnose |
 
 Zum **Durchfluss**: Bei 0,01 m³ pro Impuls kommt bei kleiner Leistung nur alle paar Minuten ein Impuls. Der Wert ist deshalb ein Mittel über den letzten Impulsabstand. Kommt der nächste Impuls später als erwartet, sinkt der Wert. Nach 5 Minuten ohne Impuls zeigt er 0 (`flow_timeout_ms`).
+
+## Dashboard
+`dashboard.yaml` enthält ein fertiges Dashboard (nur Standard-Karten, kein HACS):
+1. *Einstellungen → Dashboards → Dashboard hinzufügen → Neues Dashboard von Grund auf*
+2. Dashboard öffnen → Stift (Bearbeiten) → drei Punkte → *Raw-Konfigurationseditor*
+3. Inhalt von `dashboard.yaml` einfügen und speichern
+
+Ansicht „Übersicht“: Zählerstand, Durchfluss und Leistung als Zeiger, Verbrauch heute/Woche/Monat, Kosten, Balkendiagramme pro Tag und Monat. Ansicht „Einstellungen“: Zählerstand, Zustandszahl, Brennwert, Diagnose und Kalibrierung.
 
 ## Energie-Dashboard
 *Einstellungen → Dashboards → Energie → Gasverbrauch hinzufügen* und entweder „GasverbrauchAd“ (m³) oder „Gasverbrauch-kWh“ auswählen.
