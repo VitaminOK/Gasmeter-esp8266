@@ -1,6 +1,8 @@
 substitutions:
   # vom Gaszaehler der Faktor pro Impuls; bei mir 1 imp = 0,01m³
   imp_ratio: "0.01"
+  # kein Impuls für diese Zeit (ms) -> Durchfluss wird als 0 angezeigt
+  flow_timeout_ms: "300000"
 
 esphome:
   name: 00-gasmeter
@@ -46,6 +48,18 @@ globals:
     restore_value: true
     initial_value: '0.0'
 
+  # Zeitpunkt des letzten Impulses (millis), für den Durchfluss
+  - id: last_pulse_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
+  # Durchfluss, berechnet aus der Zeit zwischen den letzten beiden Impulsen
+  - id: flow_m3h
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+
 binary_sensor:
 
 # Sensor zählt, ob ein "klick" beim Gaszähler erfolgt ist. Auf Basis eines Eingang Impulses
@@ -62,17 +76,33 @@ binary_sensor:
 
     on_press:
       then:
-        - lambda: |-
-            id(total_pulses1) += 1;
-            ESP_LOGD("gasmeter", "Pulse bisher: %d", id(total_pulses1));
-        - component.update: gas_meter_reading
-        - component.update: gas_energy
+        - script.execute: gas_pulse
 
 
 # schaut, ob der ESP8266 online ist
   - platform: status
     name: "gasmeter Status"
 
+
+script:
+  # wird bei jedem Impuls vom Gaszähler aufgerufen
+  - id: gas_pulse
+    mode: queued
+    then:
+      - lambda: |-
+          id(total_pulses1) += 1;
+          uint32_t now = millis();
+          uint32_t dt = now - id(last_pulse_ms);
+          // nach einer langen Pause sagt der Abstand nichts über den Durchfluss aus
+          if (id(last_pulse_ms) != 0 && dt > 0 && dt < ${flow_timeout_ms}) {
+            id(flow_m3h) = ${imp_ratio} * 3600000.0f / dt;
+          }
+          id(last_pulse_ms) = now;
+          ESP_LOGD("gasmeter", "Pulse bisher: %d, Durchfluss: %.3f m³/h", id(total_pulses1), id(flow_m3h));
+      - component.update: gas_meter_reading
+      - component.update: gas_energy
+      - component.update: gas_flow
+      - component.update: gas_power
 
 number:
 
@@ -97,6 +127,7 @@ number:
           ESP_LOGI("gasmeter", "Zählerstand gesetzt: %.3f m³", x);
       - component.update: gas_meter_reading
       - component.update: gas_energy
+      - component.update: gas_power
 
 # Zustandszahl von der Gasrechnung
   - platform: template
@@ -113,6 +144,7 @@ number:
     entity_category: config
     on_value:
       - component.update: gas_energy
+      - component.update: gas_power
 
 # Brennwert von der Gasrechnung in kWh/m³
   - platform: template
@@ -130,6 +162,7 @@ number:
     entity_category: config
     on_value:
       - component.update: gas_energy
+      - component.update: gas_power
 
 
 sensor:
@@ -169,3 +202,53 @@ sensor:
       allow_other_uses: true
     name: "Pulse Counter"
     icon: "mdi:pulse"
+
+  # aktueller Durchfluss in m³/h, sinkt, wenn der nächste Impuls länger auf sich warten lässt
+  - platform: template
+    name: "Gas Durchfluss"
+    id: gas_flow
+    device_class: volume_flow_rate
+    unit_of_measurement: "m³/h"
+    state_class: "measurement"
+    icon: "mdi:gauge"
+    accuracy_decimals: 3
+    update_interval: 10s
+    lambda: |-
+      if (id(last_pulse_ms) == 0) return 0.0f;
+      uint32_t since = millis() - id(last_pulse_ms);
+      if (since > ${flow_timeout_ms}) return 0.0f;
+      float max_flow = ${imp_ratio} * 3600000.0f / since;
+      return std::min(id(flow_m3h), max_flow);
+
+  # aktuelle Leistung der Heizung in kW = m³/h * Zustandszahl * Brennwert
+  - platform: template
+    name: "Gas Leistung"
+    id: gas_power
+    device_class: power
+    unit_of_measurement: "kW"
+    state_class: "measurement"
+    icon: "mdi:fire"
+    accuracy_decimals: 2
+    update_interval: 10s
+    lambda: |-
+      return id(gas_flow).state * id(zustandszahl).state * id(brennwert).state;
+
+  # WLAN-Signalstärke am Gaszähler
+  - platform: wifi_signal
+    name: "gasmeter WLAN Signal"
+    update_interval: 60s
+
+  # Zeit seit dem letzten Neustart
+  - platform: uptime
+    name: "gasmeter Uptime"
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "gasmeter IP"
+  - platform: version
+    name: "gasmeter ESPHome Version"
+
+button:
+  - platform: restart
+    name: "gasmeter Neustart"
