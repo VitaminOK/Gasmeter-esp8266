@@ -1,0 +1,304 @@
+substitutions:
+  # vom Gaszaehler der Faktor pro Impuls; bei mir 1 imp = 0,01m³
+  imp_ratio: "0.01"
+  # Spannung am analogen Eingang, muss an den eigenen Aufbau angepasst werden.
+  # Ein größerer Abstand zwischen upper und lower verhindert Doppelzählungen.
+  threshold_upper: "0.531"
+  threshold_lower: "0.53"
+  # kein Impuls für diese Zeit (ms) -> Durchfluss wird als 0 angezeigt
+  flow_timeout_ms: "300000"
+
+esphome:
+  name: 00-gasmeter
+
+esp8266:
+  board: d1_mini
+  # Zählerstand bleibt auch nach Stromausfall erhalten
+  restore_from_flash: true
+
+# höchstens alle 10 Minuten in den Flash schreiben (schont den Flash),
+# bei Stromausfall fehlen dadurch maximal 10 Minuten an Impulsen
+preferences:
+  flash_write_interval: 10min
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_key_gasmeter
+
+ota:
+  - platform: esphome
+    password: !secret ota_gasmeter
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+
+
+globals:
+  #counter für die impulse über den digitalen Eingang (D1)
+  - id: total_pulses1
+    type: int
+    restore_value: true
+    initial_value: '0'
+
+  #counter für die impulse über den analogen Eingang (A0)
+  - id: total_pulses2
+    type: int
+    restore_value: true
+    initial_value: '0'
+
+  # Zählerstand in m³ zum Zeitpunkt des Setzens in Home Assistant
+  - id: meter_offset
+    type: float
+    restore_value: true
+    initial_value: '0.0'
+
+  # Zeitpunkt des letzten Impulses (millis), für den Durchfluss
+  - id: last_pulse_ms
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+
+  # Durchfluss, berechnet aus der Zeit zwischen den letzten beiden Impulsen
+  - id: flow_m3h
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+
+binary_sensor:
+
+# Sensor zählt, ob ein "klick" beim Gaszähler erfolgt ist. Auf Basis der Spannung
+  - platform: analog_threshold
+    name: "GasMeterAnalogTreshhold"
+    sensor_id: gasmeteranaloginput
+    threshold:
+      upper: ${threshold_upper}
+      lower: ${threshold_lower}
+    on_press:
+      then:
+        - script.execute: gas_pulse
+
+
+# Sensor zählt, ob ein "klick" beim Gaszähler erfolgt ist. Auf Basis eines Eingang Impulses
+  - platform: gpio
+    id: internal_pulse_counter
+    pin:
+      number: D1
+      mode: INPUT_PULLUP
+      allow_other_uses: true
+    name: "Live-Impuls"
+    filters:
+     - delayed_on: 50ms
+      # jü wert 150ms
+    on_press:
+      then:
+        - lambda: |-
+            id(total_pulses1) += 1;
+            ESP_LOGD("gasmeter", "Pulse digital bisher: %d", id(total_pulses1));
+        - component.update: gas_meter_reading_pulse
+
+
+# schaut, ob der ESP8266 online ist
+  - platform: status
+    name: "gasmeter Status"
+
+
+script:
+  # wird bei jedem Impuls vom Gaszähler aufgerufen
+  - id: gas_pulse
+    mode: queued
+    then:
+      - lambda: |-
+          id(total_pulses2) += 1;
+          uint32_t now = millis();
+          uint32_t dt = now - id(last_pulse_ms);
+          // nach einer langen Pause sagt der Abstand nichts über den Durchfluss aus
+          if (id(last_pulse_ms) != 0 && dt > 0 && dt < ${flow_timeout_ms}) {
+            id(flow_m3h) = ${imp_ratio} * 3600000.0f / dt;
+          }
+          id(last_pulse_ms) = now;
+          ESP_LOGD("gasmeter", "Pulse bisher: %d, Durchfluss: %.3f m³/h", id(total_pulses2), id(flow_m3h));
+      - component.update: gas_meter_reading
+      - component.update: gas_energy
+      - component.update: gas_flow
+      - component.update: gas_power
+
+number:
+
+# hier den Zählerstand vom Gaszähler eintragen (Home Assistant: Geräteseite -> "Zählerstand setzen")
+# setzt beide Zählmethoden auf denselben Stand
+  - platform: template
+    name: "Zählerstand setzen"
+    id: set_meter_reading
+    icon: "mdi:counter"
+    unit_of_measurement: "m³"
+    mode: box
+    min_value: 0
+    max_value: 99999.999
+    step: 0.001
+    entity_category: config
+    update_interval: 60s
+    lambda: |-
+      return id(meter_offset) + id(total_pulses2) * ${imp_ratio};
+    set_action:
+      - lambda: |-
+          id(meter_offset) = x;
+          id(total_pulses1) = 0;
+          id(total_pulses2) = 0;
+          ESP_LOGI("gasmeter", "Zählerstand gesetzt: %.3f m³", x);
+      - component.update: gas_meter_reading
+      - component.update: gas_meter_reading_pulse
+      - component.update: gas_energy
+      - component.update: gas_power
+
+# Zustandszahl von der Gasrechnung
+  - platform: template
+    name: "Zustandszahl"
+    id: zustandszahl
+    icon: "mdi:numeric"
+    mode: box
+    min_value: 0.8
+    max_value: 1.0
+    step: 0.0001
+    initial_value: 0.95
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - component.update: gas_energy
+      - component.update: gas_power
+
+# Brennwert von der Gasrechnung in kWh/m³
+  - platform: template
+    name: "Brennwert"
+    id: brennwert
+    icon: "mdi:fire-circle"
+    unit_of_measurement: "kWh/m³"
+    mode: box
+    min_value: 8
+    max_value: 13
+    step: 0.001
+    initial_value: 11.2
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - component.update: gas_energy
+      - component.update: gas_power
+
+
+sensor:
+# Zählerstand in m³ über den analogen Eingang (gleicher Wert wie auf dem Gaszähler)
+  - platform: template
+    name: "GasverbrauchAd"
+    id: gas_meter_reading
+    device_class: gas
+    unit_of_measurement: "m³"
+    state_class: "total_increasing"
+    icon: "mdi:fire"
+    accuracy_decimals: 3
+    update_interval: 60s
+    lambda: |-
+      return id(meter_offset) + id(total_pulses2) * ${imp_ratio};
+
+
+# Zählerstand in m³ über den digitalen Eingang, zum Vergleich der beiden Methoden
+  - platform: template
+    name: "GasverbrauchPuls"
+    id: gas_meter_reading_pulse
+    device_class: gas
+    unit_of_measurement: "m³"
+    state_class: "total_increasing"
+    icon: "mdi:fire"
+    accuracy_decimals: 3
+    update_interval: 60s
+    lambda: |-
+      return id(meter_offset) + id(total_pulses1) * ${imp_ratio};
+
+
+# Energie in kWh = m³ * Zustandszahl * Brennwert (analoger Eingang)
+  - platform: template
+    name: "Gasverbrauch-kWh"
+    id: gas_energy
+    device_class: energy
+    unit_of_measurement: "kWh"
+    state_class: "total_increasing"
+    icon: "mdi:fire"
+    accuracy_decimals: 2
+    update_interval: 60s
+    lambda: |-
+      float m3 = id(meter_offset) + id(total_pulses2) * ${imp_ratio};
+      return m3 * id(zustandszahl).state * id(brennwert).state;
+
+
+  - platform: pulse_counter
+    pin:
+      number: D1
+      allow_other_uses: true
+    name: "Pulse Counter"
+    icon: "mdi:pulse"
+
+
+  - platform: adc
+    #interner Wert, der die Spannung des Reed Sensors misst.
+    internal: false
+    #dieser Wert kann nach der Einrichtung auf true gesetzt werden.
+    pin: A0
+    id: gasmeteranaloginput
+    name: "GasMeterAnalogInput"
+    update_interval: 2s
+
+  # aktueller Durchfluss in m³/h, sinkt, wenn der nächste Impuls länger auf sich warten lässt
+  - platform: template
+    name: "Gas Durchfluss"
+    id: gas_flow
+    device_class: volume_flow_rate
+    unit_of_measurement: "m³/h"
+    state_class: "measurement"
+    icon: "mdi:gauge"
+    accuracy_decimals: 3
+    update_interval: 10s
+    lambda: |-
+      if (id(last_pulse_ms) == 0) return 0.0f;
+      uint32_t since = millis() - id(last_pulse_ms);
+      if (since > ${flow_timeout_ms}) return 0.0f;
+      float max_flow = ${imp_ratio} * 3600000.0f / since;
+      return std::min(id(flow_m3h), max_flow);
+
+  # aktuelle Leistung der Heizung in kW = m³/h * Zustandszahl * Brennwert
+  - platform: template
+    name: "Gas Leistung"
+    id: gas_power
+    device_class: power
+    unit_of_measurement: "kW"
+    state_class: "measurement"
+    icon: "mdi:fire"
+    accuracy_decimals: 2
+    update_interval: 10s
+    lambda: |-
+      return id(gas_flow).state * id(zustandszahl).state * id(brennwert).state;
+
+  # WLAN-Signalstärke am Gaszähler
+  - platform: wifi_signal
+    name: "gasmeter WLAN Signal"
+    update_interval: 60s
+
+  # Zeit seit dem letzten Neustart
+  - platform: uptime
+    name: "gasmeter Uptime"
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: "gasmeter IP"
+  - platform: version
+    name: "gasmeter ESPHome Version"
+
+button:
+  - platform: restart
+    name: "gasmeter Neustart"

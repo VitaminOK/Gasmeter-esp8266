@@ -6,8 +6,11 @@ template:
   - sensor:
     - name: "gaskosten_euro"
       unit_of_measurement: "€"
-      state: "{{ states('sensor.gasverbrauch_kwh') | float * 0.12  | round(2) }}"
-# wert nach "float *" ist der Gaspreis in Euro pro kwh    
+      state: "{{ (states('sensor.gasverbrauch_kwh') | float(0) * 0.12) | round(2) }}"
+      availability: "{{ has_value('sensor.gasverbrauch_kwh') }}"
+# wert nach "float(0) *" ist der Gaspreis in Euro pro kwh
+# nach dem ersten Setzen des Zählerstands am ESP springen die Werte einmalig hoch,
+# die utility_meter dann über die Aktion "utility_meter.calibrate" auf 0 setzen
 
 utility_meter:
 
