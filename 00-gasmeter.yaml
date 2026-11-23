@@ -13,7 +13,8 @@ api:
     key: USEYOURWONKEY
 
 ota:
-  password: USEYOURWONKEY
+  - platform: esphome
+    password: USEYOURWONKEY
 
 wifi:
   ssid: !secret wifi_ssid

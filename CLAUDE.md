@@ -42,6 +42,6 @@ Was voneinander abhängt:
 - In `00-gasmeter.yaml` ist der Faktor direkt in die Lambda geschrieben (`* 0.01` bzw. `* 0.1`), in V1/V2 steht er im Global `imp_ratio`. Der Kommentar dort spricht von „0.001“, gilt aber für 0.01.
 - `ESP_LOGD` muss in den Lambdas vor dem `return` stehen, sonst wird es nie ausgeführt.
 - V1 und V2 nutzen Pin `D1` doppelt (`gpio`-Binary-Sensor und `pulse_counter`). Deshalb brauchen beide Pin-Blöcke `allow_other_uses: true` und denselben `mode: INPUT_PULLUP`, sonst bricht ESPHome mit „Pin is used in multiple places“ ab.
-- `ota:` ist noch in der alten Schreibweise (ohne `- platform: esphome`). Aktuelle ESPHome-Versionen (seit 2024.6) lehnen das ab.
+- `ota:` braucht seit ESPHome 2024.6 die Listenform mit `- platform: esphome`.
 - `gas meter Version 1 simple` enthält einen echten API-Encryption-Key im Klartext. Die anderen Dateien nutzen Platzhalter (`USEYOURWONKEY`, `"YOUR KEY"`). Neue Keys bitte nicht einchecken.
 - Hardware: Der KY-024 muss mit 3,3 V betrieben werden (nicht 5 V). Für die Analog-Variante braucht man einen echten linearen 49E-Sensor, weil manche Boards nur so beschriftet sind. Video-Anleitung (deutsch): https://youtu.be/yp7ZDe6VlVM

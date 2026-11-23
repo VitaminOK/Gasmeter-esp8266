@@ -13,7 +13,8 @@ api:
     key: "bYt8gaeok5w36Upv3jTaAvdi0yGUrzFTnySYRWXPkeM="
 
 ota:
-  password: !secret ota_gasmester
+  - platform: esphome
+    password: !secret ota_gasmester
 
 wifi:
   ssid: !secret wifi_ssid
