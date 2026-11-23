@@ -60,6 +60,7 @@ binary_sensor:
     pin:
       number: D1
       mode: INPUT_PULLUP
+      allow_other_uses: true
     name: "Live-Impuls"
     filters:
      - delayed_on: 50ms
@@ -84,8 +85,8 @@ sensor:
     icon: "mdi:fire"
     accuracy_decimals: 2
     lambda: |-
-      return id(total_pulses2) * id(imp_ratio);
       ESP_LOGD("Gaszähler analog TAG", "Pulse bisher: %d", id(total_pulses2));
+      return id(total_pulses2) * id(imp_ratio);
 
 
 # zählt alle Impulse hoch, jedoch die von der zweiten Berechnungsmethode und rechnet diese um in m³ 
@@ -97,8 +98,8 @@ sensor:
     icon: "mdi:fire"
     accuracy_decimals: 2
     lambda: |-
-      return id(total_pulses1) * id(imp_ratio);
       ESP_LOGD("Gaszähler analog TAG", "Pulse bisher: %d", id(total_pulses1));
+      return id(total_pulses1) * id(imp_ratio);
 
 
 # zählt alle Impulse hoch, umrechnung in kWh (mal 10)
@@ -110,12 +111,15 @@ sensor:
     icon: "mdi:fire"
     accuracy_decimals: 2
     lambda: |-
-      return id(total_pulses2) * id(imp_ratio) * 10;
       ESP_LOGD("Gaszähler kWh TAG", "Pulse bisher: %d", id(total_pulses2));
+      return id(total_pulses2) * id(imp_ratio) * 10;
 
 
   - platform: pulse_counter
-    pin: D1
+    pin:
+      number: D1
+      mode: INPUT_PULLUP
+      allow_other_uses: true
     name: "Pulse Counter"
     icon: "mdi:pulse"
 

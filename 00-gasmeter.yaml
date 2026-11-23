@@ -2,7 +2,7 @@ esphome:
   name: 00-gasmeter
 
 esp8266:
-  board: esp01_1m
+  board: d1_mini
 
 # Enable logging
 logger:
@@ -51,8 +51,8 @@ sensor:
     icon: "mdi:fire"
     accuracy_decimals: 2
     lambda: |-
-      return id(total_pulses) * 0.01;
       ESP_LOGD("Gaszähler analog TAG", "Pulse bisher: %d", id(total_pulses));
+      return id(total_pulses) * 0.01;
   
   # this sensor is using the same logic, just calculating in kWh
   - platform: template
@@ -63,8 +63,8 @@ sensor:
     icon: "mdi:fire"
     accuracy_decimals: 2
     lambda: |-
-      return id(total_pulses) * 0.1;
       ESP_LOGD("Gaszähler kWh TAG", "Pulse bisher: %d", id(total_pulses));
+      return id(total_pulses) * 0.1;
   
   #analog input connected to the analog sensor output from the hall sensor board
   - platform: adc
